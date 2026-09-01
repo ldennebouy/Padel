@@ -55,6 +55,13 @@
 
   .card{background:var(--bg-elevated);border-radius:var(--radius);border:1px solid var(--line);padding:18px;margin-bottom:16px;}
   .card h2{font-family:'Anton';font-weight:400;font-size:15px;letter-spacing:.5px;text-transform:uppercase;color:var(--court-dark);margin:0 0 12px;}
+  .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+  .link-btn{border:none;background:transparent;color:var(--court);font-weight:700;font-size:13px;cursor:pointer;padding:4px 2px;}
+  .link-btn:hover{text-decoration:underline;}
+  .manage-list{display:flex;flex-direction:column;gap:8px;}
+  .manage-row{display:flex;align-items:center;gap:8px;}
+  .manage-name-input{flex:1;}
+  .manage-locked{font-size:15px;padding:0 6px;opacity:.7;}
   .hint{font-size:12px;color:var(--ink-soft);margin-top:-6px;margin-bottom:12px;}
 
   /* Date input */
@@ -184,6 +191,7 @@
   let selectedPlayers = []; // ids, up to 4
   let selectedWinners = []; // ids, up to 2
   let newPlayerName = '';
+  let manageOpen = false;
   let statsFilter = 'general'; // 'general' | 'week' | 'month'
   let weekOffset = 0;
   let monthOffset = 0;
@@ -323,6 +331,24 @@
     data.players.push(p);
     return p.id;
   }
+  async function renamePlayer(id, newName){
+    newName = (newName||'').trim();
+    if(!newName) return;
+    const p = data.players.find(p=>p.id===id);
+    if(!p || p.name===newName) return;
+    p.name = newName;
+    await save();
+    render();
+  }
+  async function deletePlayer(id){
+    const played = data.matches.filter(m=>m.players.includes(id)).length;
+    if(played>0) return; // sécurité : jamais de suppression si des parties existent
+    data.players = data.players.filter(p=>p.id!==id);
+    selectedPlayers = selectedPlayers.filter(pid=>pid!==id);
+    selectedWinners = selectedWinners.filter(pid=>pid!==id);
+    await save();
+    render();
+  }
   function togglePlayerSelect(id){
     const idx = selectedPlayers.indexOf(id);
     if(idx>-1){
@@ -395,7 +421,7 @@
     html += '</div>';
 
     html += '<div class="tabs">';
-    html += `<button class="tab-btn ${activeTab==='add'?'active':''}" data-action="tab" data-tab="add">Nouvelle partie</button>`;
+    html += `<button class="tab-btn ${activeTab==='add'?'active':''}" data-action="tab" data-tab="add">Nouveau Set</button>`;
     html += `<button class="tab-btn ${activeTab==='stats'?'active':''}" data-action="tab" data-tab="stats">Classement</button>`;
     html += '</div>';
 
@@ -420,22 +446,45 @@
 
     // Players
     h += '<div class="card">';
-    h += '<h2>Les 4 joueurs</h2>';
-    h += `<div class="selection-counter"><b>${selectedPlayers.length}</b>/4 joueurs sélectionnés</div>`;
-    h += '<div class="chip-grid">';
-    data.players.forEach(p=>{
-      const sel = selectedPlayers.includes(p.id);
-      const disabled = !sel && selectedPlayers.length>=4;
-      h += `<button class="chip ${sel?'selected':''} ${disabled?'disabled':''}" data-action="pick" data-id="${p.id}">${escapeHtml(p.name)}</button>`;
-    });
+    h += '<div class="section-header"><h2 style="margin:0;">Les 4 joueurs</h2>';
+    h += `<button class="link-btn" data-action="toggleManage">${manageOpen ? 'Terminé' : 'Gérer'}</button>`;
     h += '</div>';
-    if(data.players.length===0){
-      h += "<div class=\"hint\">Aucun joueur pour l'instant — ajoutez le premier ci-dessous.</div>";
+
+    if(manageOpen){
+      h += '<div class="manage-list">';
+      if(data.players.length===0){
+        h += "<div class=\"hint\">Aucun joueur à gérer pour l'instant.</div>";
+      }
+      data.players.forEach(p=>{
+        const played = data.matches.filter(m=>m.players.includes(p.id)).length;
+        h += '<div class="manage-row">';
+        h += `<input type="text" class="manage-name-input" data-id="${p.id}" value="${escapeHtml(p.name)}">`;
+        if(played===0){
+          h += `<button class="del-btn" data-action="deletePlayer" data-id="${p.id}" title="Supprimer">✕</button>`;
+        } else {
+          h += `<span class="manage-locked" title="A déjà ${played} partie${played>1?'s':''} enregistrée${played>1?'s':''}, suppression impossible">🔒</span>`;
+        }
+        h += '</div>';
+      });
+      h += '</div>';
+      h += '<div class="hint" style="margin-top:8px;">Modifie un nom puis clique ailleurs pour l\'enregistrer. Le cadenas 🔒 signifie que le joueur a déjà des parties enregistrées et ne peut pas être supprimé.</div>';
+      h += '<div class="new-player-row">';
+      h += `<input type="text" id="newPlayerInput" placeholder="Prénom du nouveau joueur" value="${escapeHtml(newPlayerName)}">`;
+      h += '<button class="btn-small" data-action="addPlayer">Ajouter</button>';
+      h += '</div>';
+    } else {
+      h += `<div class="selection-counter"><b>${selectedPlayers.length}</b>/4 joueurs sélectionnés</div>`;
+      h += '<div class="chip-grid">';
+      data.players.forEach(p=>{
+        const sel = selectedPlayers.includes(p.id);
+        const disabled = !sel && selectedPlayers.length>=4;
+        h += `<button class="chip ${sel?'selected':''} ${disabled?'disabled':''}" data-action="pick" data-id="${p.id}">${escapeHtml(p.name)}</button>`;
+      });
+      h += '</div>';
+      if(data.players.length===0){
+        h += "<div class=\"hint\">Aucun joueur pour l'instant — clique sur \"Gérer\" pour en ajouter un.</div>";
+      }
     }
-    h += '<div class="new-player-row">';
-    h += `<input type="text" id="newPlayerInput" placeholder="Prénom du nouveau joueur" value="${escapeHtml(newPlayerName)}">`;
-    h += '<button class="btn-small" data-action="addPlayer">Ajouter</button>';
-    h += '</div>';
     h += '</div>';
 
     // Winners
@@ -450,14 +499,14 @@
       });
       h += '</div>';
       const canSave = selectedWinners.length===2;
-      h += `<button class="btn-main" data-action="save" ${canSave?'':'disabled'}>Enregistrer la partie</button>`;
+      h += `<button class="btn-main" data-action="save" ${canSave?'':'disabled'}>Enregistrer le Set</button>`;
       h += '</div>';
     }
 
     // Matches of the day
     const dayMatches = data.matches.filter(m=>m.date===selectedDate);
     h += '<div class="card">';
-    h += `<h2>Parties du ${fmtDateHuman(selectedDate)}</h2>`;
+    h += `<h2>Sets du ${fmtDateHuman(selectedDate)}</h2>`;
     if(dayMatches.length===0){
       h += "<div class=\"empty-state\">Aucune partie enregistrée ce jour-là pour l'instant.</div>";
     } else {
@@ -509,7 +558,7 @@
     const withGames = stats.filter(s=>s.played>0);
 
     if(data.players.length===0){
-      h += '<div class="card"><div class="empty-state">Ajoutez des joueurs et des parties pour voir apparaître le classement.</div></div>';
+      h += '<div class="card"><div class="empty-state">Ajoutez des joueurs et des sets pour voir apparaître le classement.</div></div>';
       return h;
     }
     if(withGames.length===0){
@@ -571,6 +620,10 @@
       newPlayerInput.addEventListener('input', e=>{ newPlayerName = e.target.value; });
       newPlayerInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ submitNewPlayer(); } });
     }
+    app.querySelectorAll('.manage-name-input').forEach(inp=>{
+      inp.addEventListener('blur', async e=>{ await renamePlayer(e.target.getAttribute('data-id'), e.target.value); });
+      inp.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.target.blur(); } });
+    });
 
     app.querySelectorAll('[data-action]').forEach(el=>{
       el.addEventListener('click', async (e)=>{
@@ -581,6 +634,8 @@
         else if(action==='addPlayer'){ submitNewPlayer(); }
         else if(action==='save'){ await saveMatch(); }
         else if(action==='delMatch'){ await deleteMatch(el.getAttribute('data-id')); }
+        else if(action==='toggleManage'){ manageOpen = !manageOpen; render(); }
+        else if(action==='deletePlayer'){ await deletePlayer(el.getAttribute('data-id')); }
         else if(action==='filter'){ statsFilter = el.getAttribute('data-filter'); render(); }
         else if(action==='periodPrev'){ if(statsFilter==='week') weekOffset--; else monthOffset--; render(); }
         else if(action==='periodNext'){

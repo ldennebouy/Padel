@@ -158,6 +158,16 @@
   /* Ranking list */
   .rank-row{display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);}
   .rank-row:last-child{border-bottom:none;}
+  .rank-row.clickable{cursor:pointer;border-radius:8px;transition:background .12s ease;}
+  .rank-row.clickable:hover{background:var(--bg);}
+  .history-row{display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);}
+  .history-row:last-child{border-bottom:none;}
+  .history-badge{font-family:'Anton';font-size:14px;width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#fff;}
+  .history-badge.win{background:var(--court);}
+  .history-badge.loss{background:var(--danger);}
+  .history-info{flex:1;min-width:0;}
+  .history-main{font-size:13.5px;font-weight:500;}
+  .history-date{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
   .rank-num{font-family:'Anton';font-size:15px;color:var(--ink-soft);width:20px;text-align:center;flex-shrink:0;}
   .rank-info{flex:1;min-width:0;}
   .rank-name{font-weight:700;font-size:14.5px;}
@@ -192,7 +202,8 @@
   let selectedWinners = []; // ids, up to 2
   let newPlayerName = '';
   let manageOpen = false;
-  let statsFilter = 'general'; // 'general' | 'week' | 'month'
+  let statsFilter = 'general'; // 'general' | 'week' | 'month' | 'duo'
+  let selectedPlayerId = null; // id du joueur dont on affiche l'historique détaillé
   let weekOffset = 0;
   let monthOffset = 0;
 
@@ -413,6 +424,40 @@
     });
   }
 
+  function computeDuoStats(matches){
+    const map = {}; // key "id1|id2" (triés) -> {ids, played, wins}
+    matches.forEach(m=>{
+      const losers = m.players.filter(id=>!m.winners.includes(id));
+      [ [m.winners, true], [losers, false] ].forEach(([team, isWin])=>{
+        if(team.length!==2) return;
+        const key = [...team].sort().join('|');
+        if(!map[key]) map[key] = { ids: [...team].sort(), played: 0, wins: 0 };
+        map[key].played++;
+        if(isWin) map[key].wins++;
+      });
+    });
+    return Object.values(map).map(d=>({
+      key: d.ids.join('|'),
+      ids: d.ids,
+      name: d.ids.map(playerName).join(' & '),
+      played: d.played,
+      wins: d.wins,
+      ratio: d.played>0 ? d.wins/d.played : null
+    })).sort((a,b)=>{
+      if(b.ratio!==a.ratio) return b.ratio-a.ratio;
+      if(b.played!==a.played) return b.played-a.played;
+      return a.name.localeCompare(b.name);
+    });
+  }
+
+  function getPlayerMatches(id){
+    return data.matches
+      .map((m, idx)=>({m, idx}))
+      .filter(x=>x.m.players.includes(id))
+      .sort((a,b)=> b.m.date.localeCompare(a.m.date) || b.idx - a.idx)
+      .map(x=>x.m);
+  }
+
   // ---------- Render ----------
   function render(){
     const app = document.getElementById('app');
@@ -531,12 +576,60 @@
     return h;
   }
 
+  function renderPlayerDetail(id){
+    let h = '';
+    const p = data.players.find(pl=>pl.id===id);
+    if(!p) return '<div class="card"><div class="empty-state">Joueur introuvable.</div></div>';
+
+    const matches = getPlayerMatches(id);
+    const played = matches.length;
+    const wins = matches.filter(m=>m.winners.includes(id)).length;
+    const ratio = played>0 ? Math.round((wins/played)*100) : null;
+
+    h += '<button class="link-btn" data-action="backToRanking" style="margin-bottom:10px;">‹ Retour au classement</button>';
+
+    h += '<div class="card">';
+    h += `<h2 style="margin-bottom:4px;">${escapeHtml(p.name)}</h2>`;
+    h += `<div class="rank-sub" style="margin-bottom:10px;">${played} partie${played>1?'s':''} jouée${played>1?'s':''} · ${wins} victoire${wins>1?'s':''}${ratio!==null?' · '+ratio+'% de réussite':''}</div>`;
+    if(played>0){
+      h += `<div class="rank-bar-track"><div class="rank-bar-fill" style="width:${ratio}%"></div></div>`;
+    }
+    h += '</div>';
+
+    h += '<div class="card">';
+    h += '<h2>Historique des parties</h2>';
+    if(played===0){
+      h += "<div class=\"empty-state\">Ce joueur n'a pas encore de partie enregistrée.</div>";
+    } else {
+      matches.forEach(m=>{
+        const isWin = m.winners.includes(id);
+        const partnerId = (isWin ? m.winners : m.players.filter(pid=>!m.winners.includes(pid))).find(pid=>pid!==id);
+        const oppIds = isWin ? m.players.filter(pid=>!m.winners.includes(pid)) : m.winners;
+        h += '<div class="history-row">';
+        h += `<span class="history-badge ${isWin?'win':'loss'}">${isWin?'V':'D'}</span>`;
+        h += '<div class="history-info">';
+        h += `<div class="history-main">avec <b>${escapeHtml(playerName(partnerId))}</b> vs ${escapeHtml(playerName(oppIds[0]))} &amp; ${escapeHtml(playerName(oppIds[1]))}</div>`;
+        h += `<div class="history-date">${fmtDateHuman(m.date)}</div>`;
+        h += '</div>';
+        h += '</div>';
+      });
+    }
+    h += '</div>';
+
+    return h;
+  }
+
   function renderStatsTab(){
+    if(selectedPlayerId){
+      return renderPlayerDetail(selectedPlayerId);
+    }
+
     let h = '';
     h += '<div class="seg">';
     h += `<button class="seg-btn ${statsFilter==='general'?'active':''}" data-action="filter" data-filter="general">Général</button>`;
     h += `<button class="seg-btn ${statsFilter==='week'?'active':''}" data-action="filter" data-filter="week">Semaine</button>`;
     h += `<button class="seg-btn ${statsFilter==='month'?'active':''}" data-action="filter" data-filter="month">Mois</button>`;
+    h += `<button class="seg-btn ${statsFilter==='duo'?'active':''}" data-action="filter" data-filter="duo">Duos</button>`;
     h += '</div>';
 
     let matches = data.matches;
@@ -558,13 +651,40 @@
       h += '</div>';
     }
 
-    const stats = computeStats(matches, data.players);
-    const withGames = stats.filter(s=>s.played>0);
-
     if(data.players.length===0){
       h += '<div class="card"><div class="empty-state">Ajoutez des joueurs et des parties pour voir apparaître le classement.</div></div>';
       return h;
     }
+
+    // ---- Vue Duos ----
+    if(statsFilter==='duo'){
+      const duoStats = computeDuoStats(data.matches);
+      h += '<div class="card">';
+      h += '<h2>Meilleurs duos</h2>';
+      if(duoStats.length===0){
+        h += "<div class=\"empty-state\">Aucun duo pour l'instant — il faut au moins une partie enregistrée.</div>";
+      } else {
+        duoStats.forEach((d,i)=>{
+          const pct = Math.round(d.ratio*100);
+          h += '<div class="rank-row">';
+          h += `<div class="rank-num">${i+1}</div>`;
+          h += '<div class="rank-info">';
+          h += `<div class="rank-name">${escapeHtml(d.name)}</div>`;
+          h += `<div class="rank-sub">${d.played} partie${d.played>1?'s':''} ensemble · ${d.wins} victoire${d.wins>1?'s':''}</div>`;
+          h += `<div class="rank-bar-track"><div class="rank-bar-fill" style="width:${pct}%"></div></div>`;
+          h += '</div>';
+          h += `<div class="rank-pct">${pct}%</div>`;
+          h += '</div>';
+        });
+      }
+      h += '</div>';
+      return h;
+    }
+
+    // ---- Vue Général / Semaine / Mois ----
+    const stats = computeStats(matches, data.players);
+    const withGames = stats.filter(s=>s.played>0);
+
     if(withGames.length===0){
       h += '<div class="card"><div class="empty-state">Aucune partie enregistrée sur cette période.</div></div>';
       return h;
@@ -590,8 +710,9 @@
 
     h += '<div class="card">';
     h += '<h2>Classement</h2>';
+    h += '<div class="hint" style="margin-top:-6px;">Touche un joueur pour voir son historique.</div>';
     stats.forEach((s, i)=>{
-      h += '<div class="rank-row">';
+      h += `<div class="rank-row clickable" data-action="viewPlayer" data-id="${s.id}">`;
       h += `<div class="rank-num">${i+1}</div>`;
       h += '<div class="rank-info">';
       h += `<div class="rank-name">${escapeHtml(s.name)}</div>`;
@@ -640,6 +761,8 @@
         else if(action==='delMatch'){ await deleteMatch(el.getAttribute('data-id')); }
         else if(action==='toggleManage'){ manageOpen = !manageOpen; render(); }
         else if(action==='deletePlayer'){ await deletePlayer(el.getAttribute('data-id')); }
+        else if(action==='viewPlayer'){ selectedPlayerId = el.getAttribute('data-id'); render(); }
+        else if(action==='backToRanking'){ selectedPlayerId = null; render(); }
         else if(action==='filter'){ statsFilter = el.getAttribute('data-filter'); render(); }
         else if(action==='periodPrev'){ if(statsFilter==='week') weekOffset--; else monthOffset--; render(); }
         else if(action==='periodNext'){

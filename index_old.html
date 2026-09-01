@@ -289,14 +289,18 @@
     d.setDate(d.getDate() + offset*7);
     const day = (d.getDay()+6)%7; // 0=Mon
     const monday = new Date(d); monday.setDate(d.getDate()-day);
+    monday.setHours(0,0,0,0);
     const sunday = new Date(monday); sunday.setDate(monday.getDate()+6);
+    sunday.setHours(23,59,59,999);
     return {start: monday, end: sunday};
   }
   function getMonthRange(offset){
     const d = new Date();
     const m = new Date(d.getFullYear(), d.getMonth()+offset, 1);
     const start = new Date(m.getFullYear(), m.getMonth(), 1);
+    start.setHours(0,0,0,0);
     const end = new Date(m.getFullYear(), m.getMonth()+1, 0);
+    end.setHours(23,59,59,999);
     return {start, end};
   }
   const MOIS = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
@@ -499,14 +503,14 @@
       });
       h += '</div>';
       const canSave = selectedWinners.length===2;
-      h += `<button class="btn-main" data-action="save" ${canSave?'':'disabled'}>Enregistrer le Set</button>`;
+      h += `<button class="btn-main" data-action="save" ${canSave?'':'disabled'}>Enregistrer la partie</button>`;
       h += '</div>';
     }
 
     // Matches of the day
     const dayMatches = data.matches.filter(m=>m.date===selectedDate);
     h += '<div class="card">';
-    h += `<h2>Sets du ${fmtDateHuman(selectedDate)}</h2>`;
+    h += `<h2>Parties du ${fmtDateHuman(selectedDate)}</h2>`;
     if(dayMatches.length===0){
       h += "<div class=\"empty-state\">Aucune partie enregistrée ce jour-là pour l'instant.</div>";
     } else {
@@ -558,7 +562,7 @@
     const withGames = stats.filter(s=>s.played>0);
 
     if(data.players.length===0){
-      h += '<div class="card"><div class="empty-state">Ajoutez des joueurs et des sets pour voir apparaître le classement.</div></div>';
+      h += '<div class="card"><div class="empty-state">Ajoutez des joueurs et des parties pour voir apparaître le classement.</div></div>';
       return h;
     }
     if(withGames.length===0){
